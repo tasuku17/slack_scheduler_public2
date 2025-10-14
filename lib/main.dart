@@ -36,8 +36,9 @@ class MessageForm extends StatefulWidget {
 }
 
 class _MessageFormState extends State<MessageForm> {
-  static const slackWebhookUrl =
-      'https://hooks.slack.com/services/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';
+  static const slackWebhookUrl = String.fromEnvironment(
+    'https://hooks.slack.com/services/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',
+  );
 
   DateTime? startDate;
   bool _isSending = false;
