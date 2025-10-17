@@ -1,4 +1,4 @@
-name: Build Flutter Web
+name: Build and Deploy Flutter Web
 
 on:
   push:
@@ -10,22 +10,22 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
+      - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.24.5'
+          flutter-version: '3.24.0'
 
       - name: Install dependencies
         run: flutter pub get
 
-      - name: Build web app
-        run: flutter build web --release
+      - name: Build web
+        run: flutter build web --release --dart-define=SLACK_WEBHOOK_URL=${{ secrets.SLACK_WEBHOOK_URL }}
 
       - name: Deploy to GitHub Pages
-        uses: peaceiris/actions-gh-pages@v4
+        uses: peaceiris/actions-gh-pages@v3
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
+          github_token: ${{ secrets.GH_PAT }}
           publish_dir: build/web
