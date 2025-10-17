@@ -1,15 +1,25 @@
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 
-void main() {
-  runApp(const SlackApp());
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await dotenv.load(fileName: ".env"); // .env ファイルを読み込む
+  final slackWebhookUrl = dotenv.env['SLACK_WEBHOOK_URL'];
+  if (slackWebhookUrl == null || slackWebhookUrl.isEmpty) {
+    throw Exception("SLACK_WEBHOOK_URL が .env に設定されていません");
+  }
+
+  runApp(SlackApp(slackWebhookUrl: slackWebhookUrl));
 }
 
 class SlackApp extends StatelessWidget {
-  const SlackApp({super.key});
+  final String slackWebhookUrl;
+
+  const SlackApp({super.key, required this.slackWebhookUrl});
 
   @override
   Widget build(BuildContext context) {
@@ -23,27 +33,24 @@ class SlackApp extends StatelessWidget {
         GlobalCupertinoLocalizations.delegate,
       ],
       supportedLocales: const [Locale('ja', 'JP')],
-      home: const MessageForm(),
+      home: MessageForm(slackWebhookUrl: slackWebhookUrl),
     );
   }
 }
 
 class MessageForm extends StatefulWidget {
-  const MessageForm({super.key});
+  final String slackWebhookUrl;
+  const MessageForm({super.key, required this.slackWebhookUrl});
 
   @override
   State<MessageForm> createState() => _MessageFormState();
 }
 
 class _MessageFormState extends State<MessageForm> {
-  static const slackWebhookUrl = String.fromEnvironment(
-    'https://hooks.slack.com/services/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',
-  );
-
+  late String slackWebhookUrl;
   DateTime? startDate;
   bool _isSending = false;
 
-  // テンプレート定義
   final templates = {
     '月': {'time': '8:00-10:00', 'area': '全面', 'note': ''},
     '火': {'time': '8:30-10:00', 'area': '半面', 'note': '月の奇数回目は無し'},
@@ -58,21 +65,24 @@ class _MessageFormState extends State<MessageForm> {
 
   List<Map<String, dynamic>> weekPlans = [];
 
+  @override
+  void initState() {
+    super.initState();
+    slackWebhookUrl = widget.slackWebhookUrl;
+  }
+
   void _generateWeekPlans(DateTime date) {
     weekPlans.clear();
     for (int i = 0; i < 7; i++) {
       final day = date.add(Duration(days: i));
       final weekday = DateFormat('E', 'ja_JP').format(day);
-
-      // 奇数・偶数週対応（日曜・木曜）
       String key;
-      if (weekday == '日') {
+      if (weekday == '日')
         key = '日_奇数';
-      } else if (weekday == '木') {
+      else if (weekday == '木')
         key = '木_奇数';
-      } else {
+      else
         key = weekday;
-      }
 
       final t = templates[key]!;
 
@@ -95,26 +105,20 @@ class _MessageFormState extends State<MessageForm> {
   void _updatePreview(int index) {
     final plan = weekPlans[index];
     String key;
-
-    if (plan['weekday'] == '日') {
+    if (plan['weekday'] == '日')
       key = plan['isOddSunday'] == true ? '日_奇数' : '日_偶数';
-    } else if (plan['weekday'] == '木') {
+    else if (plan['weekday'] == '木')
       key = plan['isOddThursday'] == true ? '木_奇数' : '木_偶数';
-    } else {
+    else
       key = plan['weekday'];
-    }
 
     final t = templates[key]!;
-    String area = t['area']!;
-    if (plan['weekday'] == '土') area += '（経験者練習）';
-
     plan['time'] = t['time'];
     plan['area'] = t['area'];
+    plan['preview'] =
+        "${plan['date']}(${plan['weekday']}) ${t['time']} ${t['area']}${plan['weekday'] == '土' ? '（経験者練習）' : ''}\n練習に参加されたい方は代と本名(フルネーム)をこのスレッドに記入してください";
 
-    setState(() {
-      plan['preview'] =
-          "${plan['date']}(${plan['weekday']}) ${t['time']} $area\n練習に参加されたい方は代と本名(フルネーム)をこのスレッドに記入してください";
-    });
+    setState(() {});
   }
 
   Future<void> _sendWeekToSlack() async {
@@ -141,7 +145,6 @@ class _MessageFormState extends State<MessageForm> {
         padding: const EdgeInsets.all(16),
         child: Column(
           children: [
-            // 日付選択
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -169,23 +172,11 @@ class _MessageFormState extends State<MessageForm> {
               ],
             ),
             const SizedBox(height: 16),
-
-            // 1週間リスト
             Expanded(
               child: ListView.builder(
                 itemCount: weekPlans.length,
                 itemBuilder: (context, index) {
                   final plan = weekPlans[index];
-                  final timeController = TextEditingController(
-                    text: plan['time'],
-                  );
-                  final areaController = TextEditingController(
-                    text: plan['area'],
-                  );
-                  final noteController = TextEditingController(
-                    text: plan['note'],
-                  );
-
                   return Card(
                     margin: const EdgeInsets.symmetric(vertical: 6),
                     child: Padding(
@@ -208,9 +199,6 @@ class _MessageFormState extends State<MessageForm> {
                               ),
                             ],
                           ),
-                          const SizedBox(height: 8),
-
-                          // 木曜：奇数/偶数切り替え
                           if (plan['weekday'] == '木')
                             Row(
                               children: [
@@ -218,10 +206,8 @@ class _MessageFormState extends State<MessageForm> {
                                   label: const Text('奇数週'),
                                   selected: plan['isOddThursday'] == true,
                                   onSelected: (v) {
-                                    setState(() {
-                                      plan['isOddThursday'] = true;
-                                      _updatePreview(index);
-                                    });
+                                    plan['isOddThursday'] = true;
+                                    _updatePreview(index);
                                   },
                                 ),
                                 const SizedBox(width: 8),
@@ -229,16 +215,12 @@ class _MessageFormState extends State<MessageForm> {
                                   label: const Text('偶数週'),
                                   selected: plan['isOddThursday'] == false,
                                   onSelected: (v) {
-                                    setState(() {
-                                      plan['isOddThursday'] = false;
-                                      _updatePreview(index);
-                                    });
+                                    plan['isOddThursday'] = false;
+                                    _updatePreview(index);
                                   },
                                 ),
                               ],
                             ),
-
-                          // 日曜：奇数/偶数切り替え
                           if (plan['weekday'] == '日')
                             Row(
                               children: [
@@ -246,10 +228,8 @@ class _MessageFormState extends State<MessageForm> {
                                   label: const Text('奇数週'),
                                   selected: plan['isOddSunday'] == true,
                                   onSelected: (v) {
-                                    setState(() {
-                                      plan['isOddSunday'] = true;
-                                      _updatePreview(index);
-                                    });
+                                    plan['isOddSunday'] = true;
+                                    _updatePreview(index);
                                   },
                                 ),
                                 const SizedBox(width: 8),
@@ -257,39 +237,12 @@ class _MessageFormState extends State<MessageForm> {
                                   label: const Text('偶数週'),
                                   selected: plan['isOddSunday'] == false,
                                   onSelected: (v) {
-                                    setState(() {
-                                      plan['isOddSunday'] = false;
-                                      _updatePreview(index);
-                                    });
+                                    plan['isOddSunday'] = false;
+                                    _updatePreview(index);
                                   },
                                 ),
                               ],
                             ),
-
-                          const SizedBox(height: 8),
-                          TextField(
-                            controller: timeController,
-                            decoration: const InputDecoration(labelText: '時間'),
-                            onChanged: (val) {
-                              plan['time'] = val;
-                              _updatePreview(index);
-                            },
-                          ),
-                          TextField(
-                            controller: areaController,
-                            decoration: const InputDecoration(labelText: '面'),
-                            onChanged: (val) {
-                              plan['area'] = val;
-                              _updatePreview(index);
-                            },
-                          ),
-                          TextField(
-                            controller: noteController,
-                            decoration: const InputDecoration(labelText: '備考'),
-                            onChanged: (val) {
-                              plan['note'] = val;
-                            },
-                          ),
                           const SizedBox(height: 8),
                           Text(
                             "プレビュー:\n${plan['preview']}",
@@ -302,8 +255,6 @@ class _MessageFormState extends State<MessageForm> {
                 },
               ),
             ),
-
-            // 送信ボタン
             SizedBox(
               width: double.infinity,
               child: ElevatedButton.icon(
